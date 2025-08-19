@@ -1,5 +1,6 @@
-# Global owners for all files (except .github/)
-*  @nkbtemmy2 @bumlev
+# Development branch code owners - Backend  
+# .github folder managed by bikaze
+/.github/ @bikaze
 
-# GitHub folder specific owners
-.github/ @bikaze
+# Everything else managed by backend team
+* @nkbtemmy2 @bumlev
