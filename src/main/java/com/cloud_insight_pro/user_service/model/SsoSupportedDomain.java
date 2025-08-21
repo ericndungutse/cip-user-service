@@ -19,13 +19,13 @@ import lombok.Setter;
 @AllArgsConstructor
 @Getter
 @Setter
-public class SsoSupportedDomains {
+public class SsoSupportedDomain {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false, unique = true)
-    private String domain;
+    @Column(nullable = false, unique = true, name = "domain_name")
+    private String domainName;
 
     @Column(nullable = false, unique = true, name = "registration_id")
     private String registrationId; // Unique identifier for the registration (google, okta, etc.)

@@ -8,17 +8,15 @@ import com.cloud_insight_pro.user_service.model.Role;
 import com.cloud_insight_pro.user_service.model.RoleEnum;
 import com.cloud_insight_pro.user_service.repository.RoleRepository;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Component
 @Order(1)
 @Slf4j
+@RequiredArgsConstructor
 public class RoleSeeder implements CommandLineRunner {
     private final RoleRepository roleRepository;
-
-    public RoleSeeder(RoleRepository roleRepository) {
-        this.roleRepository = roleRepository;
-    }
 
     @Override
     public void run(String... args) throws Exception {
