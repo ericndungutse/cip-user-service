@@ -17,15 +17,28 @@ public class SsoSupportedDomainsSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        // Seed initial data (Domain: amalitech.com => Registration ID: googl or
-        // amalitech, or okta)
+        log.info("Starting SSO Supported Domains seeding process.");
 
-        // Seed database with amalitech.com to okta if does not exists
-        if (!ssoSupportedDomainsRep.existsByDomainName("amalitech.com")) {
-            SsoSupportedDomain ssoDomain = new SsoSupportedDomain();
-            ssoDomain.setDomainName("amalitech.com");
-            ssoDomain.setRegistrationId("okta");
-            ssoSupportedDomainsRep.save(ssoDomain);
+        String domain = "amalitech.com";
+        String registrationId = "okta";
+
+        log.debug("Checking if domain '{}' exists in the database.", domain);
+
+        if (!ssoSupportedDomainsRep.existsByDomainName(domain)) {
+            log.warn("Domain '{}' not found in database. Seeding with registrationId '{}'.", domain, registrationId);
+            try {
+                SsoSupportedDomain ssoDomain = new SsoSupportedDomain();
+                ssoDomain.setDomainName(domain);
+                ssoDomain.setRegistrationId(registrationId);
+                ssoSupportedDomainsRep.save(ssoDomain);
+                log.info("Successfully seeded domain '{}' with registrationId '{}'.", domain, registrationId);
+            } catch (Exception e) {
+                log.error("Error occurred while seeding domain '{}': {}", domain, e.getMessage(), e);
+            }
+        } else {
+            log.debug("Domain '{}' already exists in database. Skipping seeding.", domain);
         }
+
+        log.info("SSO Supported Domains seeding process completed.");
     }
 }
