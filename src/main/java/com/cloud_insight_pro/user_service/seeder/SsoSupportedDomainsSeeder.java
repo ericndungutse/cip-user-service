@@ -25,7 +25,7 @@ public class SsoSupportedDomainsSeeder implements CommandLineRunner {
         log.debug("Checking if domain '{}' exists in the database.", domain);
 
         if (!ssoSupportedDomainsRep.existsByDomainName(domain)) {
-            log.warn("Domain '{}' not found in database. Seeding with registrationId '{}'.", domain, registrationId);
+            log.info("Domain '{}' not found in database. Seeding with registrationId '{}'.", domain, registrationId);
             try {
                 SsoSupportedDomain ssoDomain = new SsoSupportedDomain();
                 ssoDomain.setDomainName(domain);
