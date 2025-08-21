@@ -5,10 +5,14 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import com.cloud_insight_pro.user_service.model.Role;
+import com.cloud_insight_pro.user_service.model.RoleEnum;
 import com.cloud_insight_pro.user_service.repository.RoleRepository;
+
+import lombok.extern.slf4j.Slf4j;
 
 @Component
 @Order(1)
+@Slf4j
 public class RoleSeeder implements CommandLineRunner {
     private final RoleRepository roleRepository;
 
@@ -18,41 +22,25 @@ public class RoleSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
+        log.info("Starting RoleSeeder...");
         seedRoles();
+        log.info("RoleSeeder finished.");
     }
 
     private void seedRoles() {
-        Role it_support_role = new Role();
-        it_support_role.setName("IT_SUPPORT");
-
-        Role cloud_cost_analyst_role = new Role();
-        cloud_cost_analyst_role.setName("CLOUD_COST_ANALYST");
-
-        Role financial_manager_role = new Role();
-        financial_manager_role.setName("FINANCIAL_MANAGER");
-
-        Role devops_engineer_role = new Role();
-        devops_engineer_role.setName("DEVOPS_ENGINEER");
-
-        Role cto_cio_role = new Role();
-        cto_cio_role.setName("CTO_CIO");
-
-        // Check if role already exists before saving
-        if (roleRepository.findByName("IT_SUPPORT").isEmpty()) {
-            roleRepository.save(it_support_role);
+        log.debug("Seeding roles...");
+        for (RoleEnum role : RoleEnum.values()) {
+            log.trace("Checking if role '{}' exists...", role.name());
+            if (!roleRepository.existsByName(role.name())) {
+                log.info("Role '{}' does not exist. Creating...", role.name());
+                Role newRole = new Role();
+                newRole.setName(role.name());
+                roleRepository.save(newRole);
+                log.debug("Role '{}' created and saved.", role.name());
+            } else {
+                log.warn("Role '{}' already exists. Skipping...", role.name());
+            }
         }
-        if (roleRepository.findByName("CLOUD_COST_ANALYST").isEmpty()) {
-            roleRepository.save(cloud_cost_analyst_role);
-        }
-        if (roleRepository.findByName("FINANCIAL_MANAGER").isEmpty()) {
-            roleRepository.save(financial_manager_role);
-        }
-        if (roleRepository.findByName("DEVOPS_ENGINEER").isEmpty()) {
-            roleRepository.save(devops_engineer_role);
-        }
-        if (roleRepository.findByName("CTO_CIO").isEmpty()) {
-            roleRepository.save(cto_cio_role);
-        }
-
+        log.debug("Role seeding completed.");
     }
 }
