@@ -3,11 +3,11 @@ name: Backend CI
 on:
   # Trigger on all branches for push events (commits)
   push:
-    branches: ["*"]
+    branches: ['*']
 
   # Trigger on pull requests to any branch
   pull_request:
-    branches: ["*"]
+    branches: ['*']
 
   # Trigger on merge events (when PR is merged)
   merge_group:
@@ -53,7 +53,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: 21
-          distribution: "temurin"
+          distribution: 'temurin'
 
       - name: Cache Maven dependencies
         if: steps.check-java.outputs.has_java == 'true'
@@ -116,6 +116,13 @@ jobs:
           echo "📦 Downloading Maven dependencies..."
           mvn dependency:resolve -q
           echo "✅ Dependencies downloaded successfully"
+
+      - name: Load tests Env
+        if: steps.check-java.outputs.has_java == 'true'
+        run: |
+          echo "🔍 Loading test environment variables..."
+          export $(cat .env.test | xargs)
+          echo "✅ Test environment variables loaded"
 
       - name: Compile source code
         if: steps.check-java.outputs.has_java == 'true'
