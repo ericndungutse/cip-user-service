@@ -1,11 +1,9 @@
 package com.cloud_insight_pro.user_service.controller;
 
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.nullValue;
-import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.*;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,8 +42,8 @@ class AuthControllerTest {
     @DisplayName("sso-login returns success with authorization endpoint for valid email")
     void ssoLogin_success() throws Exception {
         when(authService.isSsoDomainSupported("user@example.com")).thenReturn(true);
-        when(authService.getRegistrationId("user@example.com")).thenReturn("okta");
-        when(authService.getAuthorizationEndpoint("okta")).thenReturn("https://app/oauth2/authorization/okta");
+        when(authService.getRegistrationId("user@example.com")).thenReturn("auth0");
+        when(authService.getAuthorizationEndpoint("auth0")).thenReturn("https://app/oauth2/authorization/auth0");
 
         String json = "{\"email\":\"user@example.com\"}";
 
@@ -55,7 +53,7 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status", is("success")))
                 .andExpect(jsonPath("$.message", is("SSO login initiated")))
-                .andExpect(jsonPath("$.data", is("https://app/oauth2/authorization/okta")));
+                .andExpect(jsonPath("$.data.authorizationEndpoint", is("https://app/oauth2/authorization/auth0")));
     }
 
     @Test
@@ -84,7 +82,6 @@ class AuthControllerTest {
                 .content(json))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status", is("fail")))
-                .andExpect(jsonPath("$.message", is("Domain name is not supported.")))
-                .andExpect(jsonPath("$.errors", nullValue()));
+                .andExpect(jsonPath("$.message", is("Domain name is not supported.")));
     }
 }

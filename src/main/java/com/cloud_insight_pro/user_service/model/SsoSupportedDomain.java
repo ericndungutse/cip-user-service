@@ -27,6 +27,6 @@ public class SsoSupportedDomain {
     @Column(nullable = false, unique = true, name = "domain_name")
     private String domainName;
 
-    @Column(nullable = false, unique = true, name = "registration_id")
+    @Column(nullable = false, name = "registration_id")
     private String registrationId; // Unique identifier for the registration (google, okta, etc.)
 }

@@ -20,7 +20,7 @@ public class SsoSupportedDomainsSeeder implements CommandLineRunner {
         log.info("Starting SSO Supported Domains seeding process.");
 
         String domain = "amalitech.com";
-        String registrationId = "okta";
+        String registrationId = "auth0";
 
         log.debug("Checking if domain '{}' exists in the database.", domain);
 
