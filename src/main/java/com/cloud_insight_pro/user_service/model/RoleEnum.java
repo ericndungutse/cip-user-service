@@ -5,5 +5,6 @@ public enum RoleEnum {
     CLOUD_COST_ANALYST,
     FINANCIAL_MANAGER,
     DEVOPS_ENGINEER,
-    CTO_CIO
+    CTO_CIO,
+    USER
 }

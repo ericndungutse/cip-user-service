@@ -6,3 +6,7 @@ spring:
   cloud:
     config:
       uri: ${SPRING_CLOUD_CONFIG_URI}
+logging:
+  level:
+    root: INFO
+    '[com.cloud_insight_pro]': DEBUG

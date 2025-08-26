@@ -82,6 +82,7 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+
 				<dependency>
 			<groupId>org.mockito</groupId>
 			<artifactId>mockito-core</artifactId>
@@ -110,6 +111,24 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-oauth2-client</artifactId>
     	</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-jackson</artifactId> <!-- or jjwt-gson if Gson is preferred -->
+			<version>0.12.6</version>
+			<scope>runtime</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-api</artifactId>
+			<version>0.12.6</version>
+		</dependency>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-impl</artifactId>
+			<version>0.12.6</version>
+			<scope>runtime</scope>
+		</dependency>
 	</dependencies>
 	<dependencyManagement>
 		<dependencies>
@@ -128,7 +147,7 @@
 			<plugin>
 					<groupId>org.jacoco</groupId>
 					<artifactId>jacoco-maven-plugin</artifactId>
-					<version>0.8.11</version>
+					<version>0.8.12</version>
 					<executions>
 						<execution>
 							<goals>
@@ -147,9 +166,33 @@
 					</executions>
 					<configuration>
 						<excludes>
-							<exclude>com/cloud_insight_pro/user_service/seeder/*</exclude>
-							<exclude>com/cloud_insight_pro/user_service/model/*</exclude>
-							<exclude>**/UserServiceApplication.class</exclude>
+							 <!-- Application Entry Point -->
+						<exclude>**/*Application.*</exclude>
+
+						<!-- Model Folder -->
+						<exclude>**/model/**</exclude>
+						<exclude>**/models/**</exclude>
+
+						<!-- Config Folder -->
+						<exclude>**/config/**</exclude>
+						<exclude>**/seeder/**</exclude>
+
+						<!-- Listeners Folder (singular and plural) -->
+						<exclude>**/listener/**</exclude>
+						<exclude>**/listeners/**</exclude>
+
+						<!-- Filters Folder (singular and plural) -->
+						<exclude>**/filter/**</exclude>
+						<exclude>**/filters/**</exclude>
+
+						<!-- Security Folder -->
+						<exclude>**/security/**</exclude>
+
+						<!-- Dtos & Custom exceptions -->
+						<exclude>**/dto/**</exclude>
+						<exclude>**/dtos/**</exclude>
+						<exclude>**/exception/**</exclude>
+						<exclude>**/exceptions/**</exclude>
 						</excludes>
 					</configuration>
 				</plugin>
