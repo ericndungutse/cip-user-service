@@ -1,5 +1,15 @@
 name: Backend CI with Docker Multi-Platform Build
 
+permissions:
+  contents: read
+  checks: write
+  actions: read
+  security-events: none
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   # Trigger on all branches for push events (commits)
   push:
@@ -56,11 +66,12 @@ jobs:
           java-version: "21"
           cache: "maven"
 
-      - name: Run unit tests with JaCoCo (no packaging)
+    - name: Run unit tests with JaCoCo (no packaging)
         if: steps.check-java.outputs.has_java == 'true'
         run: |
-          # Run tests + generate JaCoCo report without modifying pom.xml by invoking plugin directly
-            mvn -B -q org.jacoco:jacoco-maven-plugin:prepare-agent test org.jacoco:jacoco-maven-plugin:report
+      set -e
+      # Run tests + generate JaCoCo report without modifying pom.xml by invoking plugin directly
+      mvn -B -q org.jacoco:jacoco-maven-plugin:prepare-agent test org.jacoco:jacoco-maven-plugin:report
           # Ensure report exists
           if [ ! -f target/site/jacoco/jacoco.xml ]; then echo "JaCoCo report missing"; exit 1; fi
 
@@ -73,13 +84,14 @@ jobs:
           [ -f target/site/jacoco/jacoco.xml ] && cp target/site/jacoco/jacoco.xml ci-artifacts/backend/
           if [ -d target/site/jacoco ]; then tar -czf ci-artifacts/backend/jacoco-html.tar.gz -C target/site jacoco; fi
 
-      - name: Store backend artifacts
+    - name: Store backend artifacts
         if: always() && steps.check-java.outputs.has_java == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-and-coverage
           path: ci-artifacts/backend
           if-no-files-found: ignore
+      retention-days: 7
 
       - name: Annotate backend test results
         if: always() && steps.check-java.outputs.has_java == 'true'
@@ -111,7 +123,7 @@ jobs:
             echo "No jacoco.xml" >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Decrypt environment variables (post-tests, optional)
+  - name: Decrypt environment variables (post-tests, optional)
         if: steps.check-java.outputs.has_java == 'true'
         id: decrypt-env
         run: |
@@ -127,7 +139,10 @@ jobs:
           if ! openssl enc -aes-256-gcm -d -in "$ENCRYPTED_DATA" -out "./.env" -pass "pass:$AES_KEY" 2>/dev/null; then
             openssl enc -aes-256-cbc -d -in "$ENCRYPTED_DATA" -out "./.env" -pass "pass:$AES_KEY" 2>/dev/null || { echo "Decrypt failed"; exit 1; }
           fi
-          if [[ -f ./.env ]]; then echo ".env" >> .gitignore; git add .gitignore 2>/dev/null || true; fi
+          if [[ -f ./.env ]]; then
+            grep -q '^\.env$' .gitignore 2>/dev/null || echo ".env" >> .gitignore
+            git add .gitignore 2>/dev/null || true
+          fi
           echo "has_encrypted_env=true" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
@@ -138,8 +153,8 @@ jobs:
 
       - name: Check for pom.xml
         if: steps.check-java.outputs.has_java == 'true'
-            echo "✅ Ready for deployment / push (runtime container test skipped)"
-            echo "ℹ️ Add runtime smoke tests or integration tests before pushing to registry"
+        run: |
+          if [ ! -f pom.xml ]; then
             echo "❌ pom.xml not found - Maven project required"
             exit 1
           fi
