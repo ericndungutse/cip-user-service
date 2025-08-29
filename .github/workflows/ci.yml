@@ -4,7 +4,6 @@ permissions:
   contents: read
   checks: write
   actions: read
-  security-events: none
 
 concurrency:
   group: backend-ci-${{ github.ref }}
@@ -66,17 +65,17 @@ jobs:
           java-version: "21"
           cache: "maven"
 
-    - name: Run unit tests with JaCoCo (no packaging)
+      - name: Run unit tests with JaCoCo (no packaging)
         if: steps.check-java.outputs.has_java == 'true'
         run: |
-      set -e
-      # Run tests + generate JaCoCo report without modifying pom.xml by invoking plugin directly
-      mvn -B -q org.jacoco:jacoco-maven-plugin:prepare-agent test org.jacoco:jacoco-maven-plugin:report
+          set -e
+          # Run tests + generate JaCoCo report without modifying pom.xml by invoking plugin directly
+          mvn -B -q org.jacoco:jacoco-maven-plugin:prepare-agent test org.jacoco:jacoco-maven-plugin:report
           # Ensure report exists
           if [ ! -f target/site/jacoco/jacoco.xml ]; then echo "JaCoCo report missing"; exit 1; fi
 
       - name: Upload backend test artifacts
-        if: always() && steps.check-java.outputs.has_java == 'true'
+        if: ${{ always() && steps.check-java.outputs.has_java == 'true' }}
         run: |
           set -e
           mkdir -p ci-artifacts/backend
@@ -84,17 +83,17 @@ jobs:
           [ -f target/site/jacoco/jacoco.xml ] && cp target/site/jacoco/jacoco.xml ci-artifacts/backend/
           if [ -d target/site/jacoco ]; then tar -czf ci-artifacts/backend/jacoco-html.tar.gz -C target/site jacoco; fi
 
-    - name: Store backend artifacts
-        if: always() && steps.check-java.outputs.has_java == 'true'
+      - name: Store backend artifacts
+        if: ${{ always() && steps.check-java.outputs.has_java == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-and-coverage
           path: ci-artifacts/backend
           if-no-files-found: ignore
-      retention-days: 7
+          retention-days: 7
 
       - name: Annotate backend test results
-        if: always() && steps.check-java.outputs.has_java == 'true'
+        if: ${{ always() && steps.check-java.outputs.has_java == 'true' }}
         uses: dorny/test-reporter@v1
         with:
           name: Backend Tests
@@ -103,7 +102,7 @@ jobs:
           fail-on-error: false
 
       - name: Backend coverage summary
-        if: always() && steps.check-java.outputs.has_java == 'true'
+        if: ${{ always() && steps.check-java.outputs.has_java == 'true' }}
         run: |
           echo "## Backend Test Summary" >> $GITHUB_STEP_SUMMARY
           if ls target/surefire-reports/*.xml >/dev/null 2>&1; then
@@ -123,7 +122,7 @@ jobs:
             echo "No jacoco.xml" >> $GITHUB_STEP_SUMMARY
           fi
 
-  - name: Decrypt environment variables (post-tests, optional)
+      - name: Decrypt environment variables (post-tests, optional)
         if: steps.check-java.outputs.has_java == 'true'
         id: decrypt-env
         run: |
