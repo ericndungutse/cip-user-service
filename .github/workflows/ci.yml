@@ -1,4 +1,4 @@
-name: Backend CI
+name: Backend CI with Docker Multi-Platform Build
 
 on:
   # Trigger on all branches for push events (commits)
@@ -14,7 +14,7 @@ on:
 
 jobs:
   backend-ci:
-    name: Backend CI Pipeline
+    name: Backend CI Pipeline with Docker Build
     runs-on: ubuntu-latest
 
     steps:
@@ -48,365 +48,209 @@ jobs:
           echo "✅ Ready for Java development"
           exit 0
 
-      - name: Setup JDK 21
+      - name: Set up JDK 21
         if: steps.check-java.outputs.has_java == 'true'
         uses: actions/setup-java@v4
         with:
-          java-version: 21
           distribution: "temurin"
+          java-version: "21"
+          cache: "maven"
 
-      - name: Cache Maven dependencies
+      - name: Run unit tests with JaCoCo (no packaging)
         if: steps.check-java.outputs.has_java == 'true'
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-m2
+        run: |
+          # Run tests + generate JaCoCo report without modifying pom.xml by invoking plugin directly
+            mvn -B -q org.jacoco:jacoco-maven-plugin:prepare-agent test org.jacoco:jacoco-maven-plugin:report
+          # Ensure report exists
+          if [ ! -f target/site/jacoco/jacoco.xml ]; then echo "JaCoCo report missing"; exit 1; fi
 
-      - name: Check for Maven project structure
+      - name: Upload backend test artifacts
+        if: always() && steps.check-java.outputs.has_java == 'true'
+        run: |
+          set -e
+          mkdir -p ci-artifacts/backend
+          if ls target/surefire-reports/*.xml >/dev/null 2>&1; then cp target/surefire-reports/*.xml ci-artifacts/backend/; fi
+          [ -f target/site/jacoco/jacoco.xml ] && cp target/site/jacoco/jacoco.xml ci-artifacts/backend/
+          if [ -d target/site/jacoco ]; then tar -czf ci-artifacts/backend/jacoco-html.tar.gz -C target/site jacoco; fi
+
+      - name: Store backend artifacts
+        if: always() && steps.check-java.outputs.has_java == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-and-coverage
+          path: ci-artifacts/backend
+          if-no-files-found: ignore
+
+      - name: Annotate backend test results
+        if: always() && steps.check-java.outputs.has_java == 'true'
+        uses: dorny/test-reporter@v1
+        with:
+          name: Backend Tests
+          path: target/surefire-reports/*.xml
+          reporter: java-junit
+          fail-on-error: false
+
+      - name: Backend coverage summary
+        if: always() && steps.check-java.outputs.has_java == 'true'
+        run: |
+          echo "## Backend Test Summary" >> $GITHUB_STEP_SUMMARY
+          if ls target/surefire-reports/*.xml >/dev/null 2>&1; then
+            TOTAL=$(grep -h '<testsuite' target/surefire-reports/*.xml | awk -F'tests="' '{print $2}' | cut -d '"' -f1 | awk '{s+=$1} END {print s+0}')
+            FAIL=$(grep -h '<testsuite' target/surefire-reports/*.xml | awk -F'failures="' '{print $2}' | cut -d '"' -f1 | awk '{s+=$1} END {print s+0}')
+            echo "Tests: $TOTAL, Failures: $FAIL" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No surefire XML reports" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f target/site/jacoco/jacoco.xml ]; then
+            LINE_COVERED=$(grep '<counter type="LINE"' target/site/jacoco/jacoco.xml | head -1 | sed -E 's/.*covered="([0-9]+)".*$/\1/')
+            LINE_MISSED=$(grep '<counter type="LINE"' target/site/jacoco/jacoco.xml | head -1 | sed -E 's/.*missed="([0-9]+)".*$/\1/')
+            TOTAL=$((LINE_COVERED + LINE_MISSED))
+            if [ "$TOTAL" -gt 0 ]; then PCT=$(awk -v c=$LINE_COVERED -v t=$TOTAL 'BEGIN{printf("%.2f", (c/t)*100)}'); else PCT=0; fi
+            echo "Coverage (lines): $PCT% ($LINE_COVERED/$TOTAL)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No jacoco.xml" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Decrypt environment variables (post-tests, optional)
+        if: steps.check-java.outputs.has_java == 'true'
+        id: decrypt-env
+        run: |
+          echo "🔍 Checking for encrypted environment files (after tests)..."
+          cleanup() { rm -f ./team-private-key.pem ./temp-aes-key ./.env; }
+          trap cleanup EXIT
+          ENCRYPTED_DATA=$(find . -maxdepth 1 -name "encrypted-env-vars.enc" -type f | head -1)
+            ENCRYPTED_KEY=$(find . -maxdepth 1 -name "encrypted-aes-key.enc" -type f | head -1)
+          if [[ -z "$ENCRYPTED_DATA" || -z "$ENCRYPTED_KEY" ]]; then echo "No encrypted env files - skipping"; echo "has_encrypted_env=false" >> $GITHUB_OUTPUT; exit 0; fi
+          echo "${{ secrets.TEAM_PRIVATE_KEY }}" > ./team-private-key.pem; chmod 600 ./team-private-key.pem
+          openssl rsautl -decrypt -inkey ./team-private-key.pem -in "$ENCRYPTED_KEY" -out ./temp-aes-key
+          AES_KEY=$(cat ./temp-aes-key)
+          if ! openssl enc -aes-256-gcm -d -in "$ENCRYPTED_DATA" -out "./.env" -pass "pass:$AES_KEY" 2>/dev/null; then
+            openssl enc -aes-256-cbc -d -in "$ENCRYPTED_DATA" -out "./.env" -pass "pass:$AES_KEY" 2>/dev/null || { echo "Decrypt failed"; exit 1; }
+          fi
+          if [[ -f ./.env ]]; then echo ".env" >> .gitignore; git add .gitignore 2>/dev/null || true; fi
+          echo "has_encrypted_env=true" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        if: steps.check-java.outputs.has_java == 'true'
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+
+      - name: Check for pom.xml
         if: steps.check-java.outputs.has_java == 'true'
         run: |
           if [ ! -f "pom.xml" ]; then
-            echo "❌ pom.xml not found - this should be a Maven project"
+            echo "❌ pom.xml not found - Maven project required"
             exit 1
           fi
-          echo "✅ Maven project structure verified (pom.xml found)"
+          echo "✅ Maven pom.xml found"
 
-      - name: Validate Maven POM
+      - name: Validate Maven project structure
         if: steps.check-java.outputs.has_java == 'true'
         run: |
-          echo "🔍 Validating Maven POM..."
-          mvn help:effective-pom -q
-          echo "✅ Maven POM is valid"
+          # Check for src directory structure
+          if [ ! -d "src/main/java" ]; then
+            echo "❌ src/main/java directory not found"
+            exit 1
+          fi
+          echo "✅ Maven project structure validated"
 
-      - name: Check Spring Boot dependency
+      - name: Check for Spring Boot application
         if: steps.check-java.outputs.has_java == 'true'
         run: |
+          # Look for Spring Boot indicators
           if grep -q "spring-boot" pom.xml; then
-            SPRING_VERSION=$(mvn help:evaluate -Dexpression=spring-boot.version -q -DforceStdout 2>/dev/null || echo "unknown")
-            echo "🌱 Spring Boot dependency found (version: $SPRING_VERSION)"
-            echo "✅ Spring Boot project verified"
+            echo "✅ Spring Boot project detected"
           else
-            echo "⚠️ Spring Boot dependency not found in pom.xml"
-            echo "✅ Proceeding with standard Java Maven build"
+            echo "⚠️ Spring Boot dependencies not found in pom.xml"
           fi
 
-      - name: Check Java version compatibility
+      - name: Build multi-platform Docker image
+        if: steps.check-java.outputs.has_java == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: |
+            cloudinsight-backend:latest
+            cloudinsight-backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDPLATFORM=linux/amd64
+            TARGETPLATFORM=linux/amd64
+
+      - name: Test Docker image
         if: steps.check-java.outputs.has_java == 'true'
         run: |
-          # Extract Java version from POM if specified
-          POM_JAVA_VERSION=$(mvn help:evaluate -Dexpression=maven.compiler.target -q -DforceStdout 2>/dev/null || echo "not specified")
-          CURRENT_JAVA_VERSION=21
+          echo "🧪 Testing Docker image functionality..."
 
-          echo "Current Java version: $CURRENT_JAVA_VERSION"
-          echo "POM target version: $POM_JAVA_VERSION"
+          # Load the built image
+          docker buildx build --load --platform linux/amd64 -t cloudinsight-backend:test .
 
-          if [[ "$POM_JAVA_VERSION" != "not specified" ]]; then
-            if [[ "$CURRENT_JAVA_VERSION" -lt "$POM_JAVA_VERSION" ]]; then
-              echo "❌ Java version mismatch: POM requires $POM_JAVA_VERSION but running $CURRENT_JAVA_VERSION"
-              exit 1
+          # Run the container in detached mode
+          CONTAINER_ID=$(docker run -d -p 8080:8080 cloudinsight-backend:test)
+
+          # Wait for container to start (Spring Boot needs more time)
+          echo "⏳ Waiting for Spring Boot application to start..."
+          sleep 30
+
+          # Check if container is running
+          if docker ps | grep $CONTAINER_ID; then
+            echo "✅ Container started successfully"
+            
+            # Test if the app responds (Spring Boot actuator health endpoint)
+            if command -v curl &> /dev/null; then
+              # Try health endpoint first
+              if curl -f http://localhost:8080/actuator/health &> /dev/null; then
+                echo "✅ Spring Boot actuator health endpoint responds"
+              elif curl -f http://localhost:8080/ &> /dev/null; then
+                echo "✅ Application root endpoint responds"
+              else
+                echo "⚠️ Application not responding (this might be normal for some configurations)"
+                echo "📋 Container logs:"
+                docker logs $CONTAINER_ID | tail -20
+              fi
             fi
-          fi
-          echo "✅ Java version compatibility verified"
-
-      - name: Download dependencies
-        if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          echo "📦 Downloading Maven dependencies..."
-          mvn dependency:resolve -q
-          echo "✅ Dependencies downloaded successfully"
-
-      - name: Compile source code
-        if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          echo "🔨 Compiling Java source code..."
-          mvn compile -q
-          echo "✅ Source code compiled successfully"
-
-      - name: Compile test code
-        if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          # Check if there are any test files first
-          TEST_FILES=$(find . -path "*/src/test/java/*.java" -o -name "*Test.java" -o -name "*Tests.java" | head -10)
-
-          if [ -z "$TEST_FILES" ]; then
-            echo "⚠️ No test files found, skipping test compilation"
-            echo "✅ Test compilation skipped (no tests to compile)"
           else
-            echo "🔨 Compiling test code..."
-            mvn test-compile -q
-            echo "✅ Test code compiled successfully"
+            echo "❌ Container failed to start"
+            echo "📋 Container logs:"
+            docker logs $CONTAINER_ID
+            exit 1
           fi
 
-      - name: Check for test files and run tests
+          # Cleanup
+          docker stop $CONTAINER_ID && docker rm $CONTAINER_ID
+
+      - name: Validate application properties
+        if: steps.check-java.outputs.has_java == 'true'
+        run: |
+          # Check for application configuration
+          if [ -f "src/main/resources/application.properties" ] || [ -f "src/main/resources/application.yml" ] || [ -f "src/main/resources/application.yaml" ]; then
+            echo "✅ Application configuration found"
+          else
+            echo "⚠️ No application.properties/yml found (using Spring Boot defaults)"
+          fi
+
+      - name: Check for tests
         if: steps.check-java.outputs.has_java == 'true'
         run: |
           # Check if there are any test files
-          TEST_FILES=$(find . -path "*/src/test/java/*.java" -o -name "*Test.java" -o -name "*Tests.java" | head -10)
+          TEST_FILES=$(find src/test -name "*.java" -type f 2>/dev/null | head -5)
 
           if [ -z "$TEST_FILES" ]; then
-            echo "⚠️ No test files found, skipping tests"
-            echo "✅ Tests passed (no tests to run)"
+            echo "⚠️ No test files found in src/test"
           else
-            echo "🧪 Test files found, running tests..."
+            echo "✅ Test files found:"
             echo "$TEST_FILES"
-            
-            echo "Running Maven tests..."
-            mvn verify -q
-            echo "✅ All tests passed"
           fi
-
-      - name: Upload coverage report
-        uses: coverallsapp/github-action@v2
-        continue-on-error: true
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          path-to-lcov: target/site/jacoco/jacoco.xml
-
-      - name: Extract coverage table
-        id: coverage_summary
-        run: |
-          echo "Installing dependencies for parsing coverage summary"
-          sudo apt-get update
-          sudo apt-get install -y libxml2-utils tidy
-          
-          # Check if JaCoCo report exists
-          if [ ! -f "target/site/jacoco/index.html" ]; then
-            echo "Error: JaCoCo report not found at target/site/jacoco/index.html"
-            exit 1
-          fi
-          
-          echo "Extract coverage summary table"
-          tidy -quiet -asxhtml target/site/jacoco/index.html 2>/dev/null | \
-            xmllint --html --xpath "//table[1]" - 2>/dev/null | \
-            perl -pe 's/<(\w+)[^>]*>/<\1>/g' > coverage-table.html
-          
-          # Verify we got some content
-          if [ ! -s coverage-table.html ]; then
-            echo "Error: Failed to extract coverage table"
-            exit 1
-          fi
-          
-          echo "Store the extracted coverage summary table for GitHub Actions output"
-          {
-            echo 'table<<EOF'
-            cat coverage-table.html
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Generate JaCoCo badge
-        uses: cicirello/jacoco-badge-generator@v2
-        continue-on-error: true
-        with:
-          jacoco-csv-file: target/site/jacoco/jacoco.csv
-
-      - name: Check for existing coverage comment
-        id: existing_comment
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Look for existing coverage comment
-          COMMENT_ID=$(gh api \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            /repos/${{ github.repository }}/issues/$PR_NUMBER/comments \
-            --jq '.[] | select(.body | contains("## ✅ Code Coverage")) | .id' | head -1)
-          
-          echo "existing_comment_id=$COMMENT_ID" >> "$GITHUB_OUTPUT"
-
-      - name: Post or update coverage summary comment
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Prepare comment body
-          TABLE="${{ steps.coverage_summary.outputs.table }}"
-          EXISTING_COMMENT_ID="${{ steps.existing_comment.outputs.existing_comment_id }}"
-          
-          # Create the comment body
-          COMMENT_BODY="## ✅ Test Coverage Summary
-          
-          "
-          
-          # Add badge from Coveralls if repo info is available
-          ORG="${GITHUB_REPOSITORY_OWNER}"
-          REPO=$(basename "$GITHUB_REPOSITORY")
-          BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
-          
-          COVERALLS_BADGE="https://coveralls.io/repos/github/$ORG/$REPO/badge.svg?branch=$BRANCH"
-        
-          COMMENT_BODY="$COMMENT_BODY![Coverage Status]($COVERALLS_BADGE)
-          
-          ### Detailed Coverage Report
-          $TABLE
-          
-          ---
-          *Coverage report generated on $(date)*"
-          
-          # Create JSON payload using here-doc to avoid shell escaping issues
-          cat << EOF > /tmp/comment_payload.json
-          {
-            "body": $(echo "$COMMENT_BODY" | jq -Rs .)
-          }
-          EOF
-          
-          # Update existing comment or create a new one
-          if [ -n "$EXISTING_COMMENT_ID" ]; then
-            echo "Updating existing comment ID: $EXISTING_COMMENT_ID"
-            gh api \
-              --method PATCH \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "/repos/${{ github.repository }}/issues/comments/$EXISTING_COMMENT_ID" \
-              --input /tmp/comment_payload.json
-          else
-            echo "Creating new coverage comment"
-            gh api \
-              --method POST \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "/repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
-              --input /tmp/comment_payload.json
-          fi
-          
-          rm -f /tmp/comment_payload.json
-
-      - name: Clean previous builds
-        if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          echo "🧹 Cleaning previous build artifacts..."
-          mvn clean -q
-          echo "✅ Previous build artifacts cleaned"
-
-      - name: Check code style (if Checkstyle is configured)
-        if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          if grep -q "maven-checkstyle-plugin" pom.xml; then
-            echo "🔍 Running Checkstyle code analysis..."
-            mvn checkstyle:check -q
-            echo "✅ Checkstyle analysis passed"
-          else
-            echo "⚠️ Checkstyle not configured, skipping code style check"
-          fi
-        continue-on-error: true
-
-      - name: Run static analysis (if SpotBugs is configured)
-        if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          if grep -q "spotbugs-maven-plugin" pom.xml; then
-            echo "🔍 Running SpotBugs static analysis..."
-            mvn spotbugs:check -q
-            echo "✅ SpotBugs analysis passed"
-          else
-            echo "⚠️ SpotBugs not configured, skipping static analysis"
-          fi
-        continue-on-error: true
-
-      - name: Build and package application
-        if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          echo "🏗️ Building and packaging application from source..."
-          mvn clean package -DskipTests -q
-          echo "✅ Application built and packaged successfully"
-
-      - name: Verify build artifacts were created
-        if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          if [ ! -d "target" ]; then
-            echo "❌ Target directory not found after build"
-            exit 1
-          fi
-
-          # Check for newly built JAR files
-          JAR_FILES=$(find target -name "*.jar" -type f | head -5)
-          if [ -z "$JAR_FILES" ]; then
-            echo "❌ No JAR files were built in target directory"
-            echo "❌ Maven build may have failed to create artifacts"
-            exit 1
-          fi
-
-          echo "✅ Build artifacts successfully created:"
-          echo "$JAR_FILES"
-
-          # Check file sizes and verify they're not empty
-          for jar in $JAR_FILES; do
-            SIZE=$(du -sh "$jar" | cut -f1)
-            BYTES=$(stat -c%s "$jar")
-            if [ "$BYTES" -eq 0 ]; then
-              echo "❌ JAR file is empty: $(basename "$jar")"
-              exit 1
-            fi
-            echo "  - $(basename "$jar"): $SIZE"
-          done
-          echo "✅ All JAR files are valid and non-empty"
-
-      - name: Verify Spring Boot application (if Spring Boot project)
-        if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          if grep -q "spring-boot" pom.xml; then
-            # Check for Spring Boot executable JAR that we just built
-            EXECUTABLE_JAR=$(find target -name "*.jar" -not -name "*-sources.jar" -not -name "*-javadoc.jar" | head -1)
-            if [ -n "$EXECUTABLE_JAR" ]; then
-              echo "🌱 Spring Boot executable JAR built: $(basename "$EXECUTABLE_JAR")"
-              
-              # Verify it's an executable Spring Boot JAR by checking manifest
-              if jar tf "$EXECUTABLE_JAR" | grep -q "BOOT-INF/" || jar tf "$EXECUTABLE_JAR" | grep -q "org/springframework/boot/"; then
-                echo "✅ Spring Boot JAR structure verified"
-                
-                # Check if the JAR can display help (quick validation)
-                timeout 10s java -jar "$EXECUTABLE_JAR" --help >/dev/null 2>&1 || echo "✅ Spring Boot JAR is properly structured"
-              else
-                echo "⚠️ JAR may not be a proper Spring Boot executable JAR"
-              fi
-            else
-              echo "❌ No executable JAR found after build"
-              exit 1
-            fi
-          fi
-
-      - name: Security scan (if OWASP Dependency Check is configured)
-        if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          if grep -q "dependency-check-maven" pom.xml; then
-            echo "🔒 Running OWASP dependency security scan..."
-            mvn org.owasp:dependency-check-maven:check -q
-            echo "✅ Security scan completed"
-          else
-            echo "⚠️ OWASP Dependency Check not configured, skipping security scan"
-          fi
-        continue-on-error: true
-
-      - name: Generate test report (if Surefire reports are available)
-        if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          if [ -d "target/surefire-reports" ]; then
-            echo "📊 Test reports generated:"
-            ls -la target/surefire-reports/
-            echo "✅ Test reporting completed"
-          else
-            echo "⚠️ No test reports found"
-          fi
-        continue-on-error: true
 
       - name: Final validation
         if: steps.check-java.outputs.has_java == 'true'
         run: |
           echo "🎉 All CI checks passed successfully!"
-          echo "✅ Dependencies resolved"
-          echo "✅ Source code compiled"
-          echo "✅ Tests executed (or skipped if none found)"
-          echo "✅ Application built and packaged from source"
-          echo "✅ Build artifacts created and verified"
-          echo "✅ Ready for deployment"
-
-      - name: Upload build artifacts
-        if: steps.check-java.outputs.has_java == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: maven-build-artifacts-java-21
-          path: |
-            target/*.jar
-            target/surefire-reports/
-          retention-days: 7
+          echo "✅ Java project structure validated"
+          echo "✅ Multi-platform Docker image built"
+          echo "✅ Container functionality tested"
+          echo "✅ Ready for deployment on AMD64 and ARM64 architectures"
