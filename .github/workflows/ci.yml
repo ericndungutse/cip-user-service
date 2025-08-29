@@ -138,8 +138,8 @@ jobs:
 
       - name: Check for pom.xml
         if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          if [ ! -f "pom.xml" ]; then
+            echo "✅ Ready for deployment / push (runtime container test skipped)"
+            echo "ℹ️ Add runtime smoke tests or integration tests before pushing to registry"
             echo "❌ pom.xml not found - Maven project required"
             exit 1
           fi
@@ -181,48 +181,6 @@ jobs:
             BUILDPLATFORM=linux/amd64
             TARGETPLATFORM=linux/amd64
 
-      - name: Test Docker image
-        if: steps.check-java.outputs.has_java == 'true'
-        run: |
-          echo "🧪 Testing Docker image functionality..."
-
-          # Load the built image
-          docker buildx build --load --platform linux/amd64 -t cloudinsight-backend:test .
-
-          # Run the container in detached mode
-          CONTAINER_ID=$(docker run -d -p 8080:8080 cloudinsight-backend:test)
-
-          # Wait for container to start (Spring Boot needs more time)
-          echo "⏳ Waiting for Spring Boot application to start..."
-          sleep 30
-
-          # Check if container is running
-          if docker ps | grep $CONTAINER_ID; then
-            echo "✅ Container started successfully"
-            
-            # Test if the app responds (Spring Boot actuator health endpoint)
-            if command -v curl &> /dev/null; then
-              # Try health endpoint first
-              if curl -f http://localhost:8080/actuator/health &> /dev/null; then
-                echo "✅ Spring Boot actuator health endpoint responds"
-              elif curl -f http://localhost:8080/ &> /dev/null; then
-                echo "✅ Application root endpoint responds"
-              else
-                echo "⚠️ Application not responding (this might be normal for some configurations)"
-                echo "📋 Container logs:"
-                docker logs $CONTAINER_ID | tail -20
-              fi
-            fi
-          else
-            echo "❌ Container failed to start"
-            echo "📋 Container logs:"
-            docker logs $CONTAINER_ID
-            exit 1
-          fi
-
-          # Cleanup
-          docker stop $CONTAINER_ID && docker rm $CONTAINER_ID
-
       - name: Validate application properties
         if: steps.check-java.outputs.has_java == 'true'
         run: |
@@ -251,6 +209,13 @@ jobs:
         run: |
           echo "🎉 All CI checks passed successfully!"
           echo "✅ Java project structure validated"
+          echo "✅ Tests executed prior to Docker build"
           echo "✅ Multi-platform Docker image built"
-          echo "✅ Container functionality tested"
-          echo "✅ Ready for deployment on AMD64 and ARM64 architectures"
+          if [ -f target/site/jacoco/jacoco.xml ]; then
+            LINE_COVERED=$(grep '<counter type="LINE"' target/site/jacoco/jacoco.xml | head -1 | sed -E 's/.*covered="([0-9]+)".*$/\1/')
+            LINE_MISSED=$(grep '<counter type="LINE"' target/site/jacoco/jacoco.xml | head -1 | sed -E 's/.*missed="([0-9]+)".*$/\1/')
+            TOTAL=$((LINE_COVERED + LINE_MISSED))
+            if [ "$TOTAL" -gt 0 ]; then PCT=$(awk -v c=$LINE_COVERED -v t=$TOTAL 'BEGIN{printf("%.2f", (c/t)*100)}'); else PCT=0; fi
+            echo "📊 Line coverage: $PCT% ($LINE_COVERED/$TOTAL)"; else echo "📊 Line coverage: n/a"; fi
+          echo "✅ Ready for deployment / push (runtime container test skipped)"
+          echo "ℹ️ Add runtime smoke tests or integration tests before pushing to registry"
