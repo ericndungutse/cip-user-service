@@ -1,6 +1,0 @@
-# Development branch code owners - Backend  
-# .github folder managed by bikaze
-/.github/ @bikaze
-
-# Everything else managed by backend team
-* @nkbtemmy2 @bumlev
