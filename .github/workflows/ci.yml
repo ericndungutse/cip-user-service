@@ -34,3 +34,6 @@ jobs:
       - name: Push to docker hub
         if: github.event_name == 'push'
         run: docker push ericndungutse/cip-user-service:latest
+      - name: Deploy to Render
+        if: github.event_name == 'push'
+        run: curl -X POST "https://api.render.com/deploy/srv-d2s79ovdiees73be142g?key=${{ secrets.RENDER_DEPLOY_KEY }}"
