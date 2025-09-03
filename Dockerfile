@@ -1,42 +1,25 @@
-# Build stage: Compile the application
-FROM maven:3.9-eclipse-temurin-21 AS builder
+# Perform the extraction in a separate builder container
+FROM bellsoft/liberica-openjre-debian:24-cds AS builder
+WORKDIR /builder
+# This points to the built jar file in the target folder
+# Adjust this to 'build/libs/*.jar' if you're using Gradle
+ARG JAR_FILE=target/*.jar
+# Copy the jar file to the working directory and rename it to application.jar
+COPY ${JAR_FILE} application.jar
+# Extract the jar file using an efficient layout
+RUN java -Djarmode=tools -jar application.jar extract --layers --destination extracted
 
-WORKDIR /build
-
-# Copy pom.xml first for better caching
-COPY pom.xml .
-# Download dependencies (will be cached if pom.xml doesn't change)
-RUN mvn dependency:go-offline -B
-
-# Copy source code
-COPY src ./src/
-
-# Build the application
-RUN mvn package -DskipTests
-
-# Runtime stage: Setup the actual runtime environment
-FROM bellsoft/liberica-openjre-debian:21-cds
-
-# Add metadata
-LABEL maintainer="AmaliTech Training Academy" \
-    description="Cloud Insight Pro Project" \
-    version="1.0"
-
-# Set default environment variables (can be overridden)
-ENV SPRING_PROFILES_ACTIVE=production
-ENV SERVER_PORT=8080
-
-# Create a non-root user
-RUN useradd -r -u 1001 -g root userservice
-
+# This is the runtime container
+FROM bellsoft/liberica-openjre-debian:24-cds
 WORKDIR /application
-
-# Copy the extracted layers from the build stage
-COPY --from=builder --chown=userservice:root /build/target/*.jar ./application.jar
-
-# Configure container
-USER 1001
-EXPOSE 8080
-
-# Use the standard JAR execution
-ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-Djava.security.egd=file:/dev/./urandom", "-jar", "application.jar"]
+# Copy the extracted jar contents from the builder container into the working directory in the runtime container
+# Every copy step creates a new docker layer
+# This allows docker to only pull the changes it really needs
+COPY --from=builder /builder/extracted/dependencies/ ./
+COPY --from=builder /builder/extracted/spring-boot-loader/ ./
+COPY --from=builder /builder/extracted/snapshot-dependencies/ ./
+COPY --from=builder /builder/extracted/application/ ./
+# Start the application jar - this is not the uber jar used by the builder
+# This jar only contains application code and references to the extracted jar files
+# This layout is efficient to start up and CDS/AOT cache friendly
+ENTRYPOINT ["java", "-jar", "application.jar"]
