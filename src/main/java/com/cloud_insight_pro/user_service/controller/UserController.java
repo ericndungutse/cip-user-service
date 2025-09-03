@@ -36,4 +36,12 @@ public class UserController {
     return ResponseEntity.ok(response);
   }
 
+  @GetMapping("/health")
+  public ResponseEntity<APIResponse> healthCheck() {
+    APIResponse response = APIResponseFactory
+        .success("User service is up and running", Map.of());
+
+    return ResponseEntity.ok(response);
+  }
+
 }
