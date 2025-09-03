@@ -19,6 +19,8 @@ jobs:
           distribution: 'temurin'
       - name: Install maven
         run: sudo apt update && sudo apt-get -y install maven
+      - name: run tests
+        run: mvn test
       - name: Build with maven
         run: mvn clean package -DskipTests
       - name: build image
