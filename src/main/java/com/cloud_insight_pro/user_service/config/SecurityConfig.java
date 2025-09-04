@@ -74,7 +74,7 @@ public class SecurityConfig {
                         // Add token cookie
                         Cookie cookie = new Cookie("token", token);
                         cookie.setHttpOnly(true);
-                        cookie.setSecure(true);
+                        cookie.setSecure(false);
                         cookie.setPath("/");
                         cookie.setMaxAge(Integer.parseInt(cookieMaxAge));
                         response.addCookie(cookie);
