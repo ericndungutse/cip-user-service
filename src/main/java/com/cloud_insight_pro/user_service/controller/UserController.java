@@ -54,7 +54,7 @@ public class UserController {
 
     // expiration
     HttpHeaders headers = new HttpHeaders();
-    headers.add(HttpHeaders.SET_COOKIE, "token=; HttpOnly; Path=/; Max-Age=0; SameSite=lax; Secure");
+    headers.add(HttpHeaders.SET_COOKIE, "token=; HttpOnly; Path=/; Max-Age=0; SameSite=None; Secure");
 
     APIResponse response = APIResponseFactory.success("Logged out successfully",
         Map.of("logoutUrl", OAUTH_ISSUER_URL + "/logout"));

@@ -76,15 +76,17 @@ public class SecurityConfig {
                         // Build cookie with SameSite=Lax
                         ResponseCookie cookie = ResponseCookie.from("token", token)
                                         .httpOnly(true)
-                                        .secure(false) // set true if HTTPS
+                                        .secure(true) // localhost is HTTP
                                         .path("/")
                                         .maxAge(Long.parseLong(cookieMaxAge))
-                                        .sameSite("Lax")
+                                        .sameSite("None")
                                         .build();
+
+                        // Send json response with token
 
                         response.addHeader("Set-Cookie", cookie.toString());
 
-                        response.sendRedirect(frontendUrl + "/dashboard");
+                        response.sendRedirect(frontendUrl + "/api/auth/success?token=" + token);
                 } else {
                         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                         response.getWriter().write("User not found");
