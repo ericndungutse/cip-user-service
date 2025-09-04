@@ -1,5 +1,8 @@
 package com.cloud_insight_pro.user_service.security;
 
+import java.util.List;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -19,6 +22,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RequiredArgsConstructor
 public class CustomOidcUserService extends OidcUserService {
+    @Value("${BASE_URL}")
+    private String baseUrl;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
 
@@ -27,23 +32,30 @@ public class CustomOidcUserService extends OidcUserService {
         log.debug("Starting OIDC user loading process");
 
         OidcUser oidcUser = super.loadUser(userRequest);
+
+        System.out.println("Loaded OIDC user: " + oidcUser.getClaims());
+        List<String> roles = oidcUser.getClaim(String.format("%sroles", baseUrl));
+
         log.info("Loaded OIDC user: {}", oidcUser.getSubject());
 
         String nickname = oidcUser.getAttribute("nickname");
         String email = oidcUser.getAttribute("email");
         String fullName = oidcUser.getAttribute("name");
         String picture = oidcUser.getAttribute("picture");
+        String role = roles != null && !roles.isEmpty() ? roles.get(0) : "USER";
 
-        log.debug("Extracted attributes - nickname: {}, email: {}, fullName: {}, picture: {}", nickname, email,
-                fullName, picture);
+        log.debug("Extracted attributes - nickname: {}, email: {}, fullName: {}, picture: {}, role: {}", nickname,
+                email,
+                fullName, picture, role);
 
         Role userRole;
         try {
-            userRole = roleRepository.findByName(RoleEnum.USER.name())
+            userRole = roleRepository.findByName(
+                    role)
                     .orElseThrow(() -> new RuntimeException("User role not found"));
             log.debug("User role found: {}", userRole.getName());
         } catch (RuntimeException e) {
-            log.error("Failed to find user role: {}", e.getMessage());
+            log.error("Failed to find user role: {} for role: {}", e.getMessage(), role);
             throw e;
         }
 
