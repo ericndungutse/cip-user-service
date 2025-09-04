@@ -6,6 +6,7 @@ import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.ResponseCookie;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -72,12 +73,17 @@ public class SecurityConfig {
                         // Generate JWT token
                         String token = jwtUtil.generateJwtTokenFromUserId(userDetails);
                         // Add token cookie
-                        Cookie cookie = new Cookie("token", token);
-                        cookie.setHttpOnly(true);
-                        cookie.setSecure(false);
-                        cookie.setPath("/");
-                        cookie.setMaxAge(Integer.parseInt(cookieMaxAge));
-                        response.addCookie(cookie);
+                        // Build cookie with SameSite=Lax
+                        ResponseCookie cookie = ResponseCookie.from("token", token)
+                                        .httpOnly(true)
+                                        .secure(false) // set true if HTTPS
+                                        .path("/")
+                                        .maxAge(Long.parseLong(cookieMaxAge))
+                                        .sameSite("Lax")
+                                        .build();
+
+                        response.addHeader("Set-Cookie", cookie.toString());
+
                         response.sendRedirect(frontendUrl + "/dashboard");
                 } else {
                         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
